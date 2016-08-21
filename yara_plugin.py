@@ -111,7 +111,7 @@ class YaraScan(object):
                     break
                 last_off = off
             addr = self.start + string[0] + last_off
-            log(1, "0x%016x rule %s string %s" % (addr, data['rule'], string[2]))
+            log(1, "0x%x rule %s string %s" % (addr, data['rule'], string[2]))
             if self.bv.is_offset_executable(addr):
                 # write comment
                 bb_addr = self.find_current_basic_block(addr)
@@ -119,7 +119,7 @@ class YaraScan(object):
                 for bb in bbs:
                     if bb.end > addr:
                         f = bb.function
-                        f.set_comment(f.start, "0x%016x rule %s string %s" % (addr, data['rule'], string[2]))
+                        f.set_comment(f.start, "0x%x rule %s string %s" % (addr, data['rule'], string[2]))
             else:
                 pass
         return yara.CALLBACK_CONTINUE
