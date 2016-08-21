@@ -41,11 +41,8 @@ class YaraScan(object):
         self.load_binary()
         self.load_functionEPs()
         self.load_signatures()
-        self.log("scanning binary %s" % bv.file.filename)
+        log(1, "scanning binary %s" % bv.file.filename)
         self.scan()
-
-    def log(self, msg):
-        print "YARA: %s" % msg
 
     def load_functionEPs(self):
         addr = self.start
@@ -82,24 +79,23 @@ class YaraScan(object):
         try:
             ininfo = os.stat(YARA_SIGNATURE_DIR)
             if not stat.S_ISDIR(ininfo.st_mode):
-                self.log("%s is no directory" % YARA_SIGNATURE_DIR)
+                log(3, "%s is no directory" % YARA_SIGNATURE_DIR)
                 sys.exit(-1)
         except OSError as e:
             if "No such file or directory" in e:
                 # create new directory
-                self.log("creating %s" % YARA_SIGNATURE_DIR)
+                log(2, "creating %s" % YARA_SIGNATURE_DIR)
                 os.mkdir(YARA_SIGNATURE_DIR)
             else:
-                self.log("could not read %s" % YARA_SIGNATURE_DIR)
+                log(3, "could not read %s" % YARA_SIGNATURE_DIR)
                 sys.exit(-1)
-
         yara_files = [dir for dir in os.listdir(YARA_SIGNATURE_DIR) if ".yar" in dir[-4:]]
         for yara_file in yara_files:
-            self.log("loading %s" % yara_file)
+            log(1, "loading %s" % yara_file)
             try:
                 self.rules.append(yara.compile(filepath=YARA_SIGNATURE_DIR + "/" + yara_file))
             except yara.SyntaxError as e:
-                self.log("error compiling %s" % yara_file)
+                log(2, "error compiling %s" % yara_file)
 
     def find_function(self, addr):
             return self.bv.get_function_at(self.bv.platform, addr)
@@ -117,7 +113,6 @@ class YaraScan(object):
                     if possible_bb > addr:
                         return check_bb
                     check_bb = possible_bb
-
             steps = steps * 2
 
     def yr_callback(self, data):
@@ -131,7 +126,7 @@ class YaraScan(object):
                     break
                 last_off = off
             addr = self.start + string[0] + last_off
-            self.log("0x%016x rule %s string %s" % (addr, data['rule'], string[2]))
+            log(1, "0x%016x rule %s string %s" % (addr, data['rule'], string[2]))
             if self.bv.is_offset_executable(addr):
                 # write comment
                 bb_addr = self.find_current_basic_block(addr)
