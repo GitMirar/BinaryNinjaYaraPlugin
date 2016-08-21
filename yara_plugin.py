@@ -45,14 +45,7 @@ class YaraScan(object):
         self.scan()
 
     def load_functionEPs(self):
-        addr = self.start
-        last_addr = 0
-        while True:
-            addr = self.bv.get_next_function_start_after(last_addr)
-            if addr == last_addr or (not addr):
-                break
-            self.function_EPs.append(addr)
-            last_addr = addr
+        self.func_EPs = [func.start for func in self.bv.functions]
 
     def load_binary(self):
         off = 0
