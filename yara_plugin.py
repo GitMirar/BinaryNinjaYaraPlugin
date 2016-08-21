@@ -42,6 +42,11 @@ class YaraScan(object):
         log(1, "scanning binary %s" % bv.file.filename)
         self.scan()
 
+    """
+    traverse the linear address space in steps of 0x1000bytes (pagesize on x86) 
+    in order to find mapped memory.
+    likely breaks on architectures with a different pagesize.
+    """
     def load_binary(self):
         off = 0
         page_size = 0x1000
@@ -49,11 +54,11 @@ class YaraScan(object):
             if self.start + off >= self.start + self.size:
                 # we are done
                 break
-            tmp = self.bv.read(self.start + off, self.size)
-            if len(tmp) > 0:
-                self.data.append(tmp)
+            read_buffer = self.bv.read(self.start + off, self.size)
+            if len(read_buffer) > 0:
+                self.data.append(read_buffer)
                 self.data_offsets.append(self.start + off)
-                off = off + len(tmp)
+                off = off + len(read_buffer)
             else:
                 off_alignment = (self.start + off) % page_size
                 if off_alignment:
@@ -86,19 +91,19 @@ class YaraScan(object):
                 log(2, "error compiling %s" % yara_file)
 
     def find_current_basic_block(self, addr):
-        steps = 0x40
+        neg_off = 0x40
         while True:
-            possible_bb = self.bv.get_next_basic_block_start_after(addr - steps)
-            if possible_bb < addr:
-                check_bb = self.bv.get_next_basic_block_start_after(possible_bb)
-                if check_bb > addr:
-                    return check_bb
+            bb_previous_bb = self.bv.get_next_basic_block_start_after(addr - neg_off)
+            if bb_previous_bb < addr:
+                bb_candidate = self.bv.get_next_basic_block_start_after(bb_previous_bb)
+                if bb_candidate > addr:
+                    return bb_candidate
                 while True:
-                    possible_bb = self.bv.get_next_basic_block_start_after(check_bb)
+                    possible_bb = self.bv.get_next_basic_block_start_after(bb_candidate)
                     if possible_bb > addr:
-                        return check_bb
-                    check_bb = possible_bb
-            steps = steps * 2
+                        return bb_candidate
+                    bb_candidate = possible_bb
+            neg_off = neg_off * 2
 
     def yr_callback(self, data):
         if not data['matches']:
@@ -110,26 +115,25 @@ class YaraScan(object):
                 if off > match_off:
                     break
                 last_off = off
-            addr = self.start + string[0] + last_off
-            log(1, "0x%x rule %s string %s" % (addr, data['rule'], string[2]))
-            if self.bv.is_offset_executable(addr):
+            match_addr = self.start + string[0] + last_off
+            matched_string = ''.join(["%02x " % ord(c) for c in string[2]])
+            log(1, "0x%x rule %s string %s" % (match_addr, data['rule'], matched_string))
+            if self.bv.is_offset_executable(match_addr):
                 # write comment
-                bb_addr = self.find_current_basic_block(addr)
+                bb_addr = self.find_current_basic_block(match_addr)
                 bbs = self.bv.get_basic_blocks_at(bb_addr)
                 for bb in bbs:
-                    if bb.end > addr:
+                    if bb.end > match_addr:
                         f = bb.function
-                        f.set_comment(f.start, "0x%x rule %s string %s" % (addr, data['rule'], string[2]))
+                        f.set_comment(f.start, "0x%x rule %s string %s" % (match_addr, data['rule'], matched_string))
             else:
                 pass
         return yara.CALLBACK_CONTINUE
 
     def scan(self):
-        tmp = ''
-        for data in self.data:
-            tmp = tmp + data
+        scan_buffer = ''.join(self.data)
         for yr in self.rules:
-            yr.match(data=tmp, callback=self.yr_callback, timeout=30)
+            yr.match(data=scan_buffer, callback=self.yr_callback, timeout=30)
 
 def yara_scan(bv):
     ys = YaraScan(bv)
