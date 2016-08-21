@@ -31,7 +31,6 @@ class YaraScan(object):
     size = 0
     data = [] 
     data_offsets = []
-    function_EPs = []
 
     def __init__(self, bv):
         self.bv = bv
@@ -39,13 +38,9 @@ class YaraScan(object):
         self.end = self.bv.end
         self.size = self.end - self.start
         self.load_binary()
-        self.load_functionEPs()
         self.load_signatures()
         log(1, "scanning binary %s" % bv.file.filename)
         self.scan()
-
-    def load_functionEPs(self):
-        self.func_EPs = [func.start for func in self.bv.functions]
 
     def load_binary(self):
         off = 0
@@ -89,9 +84,6 @@ class YaraScan(object):
                 self.rules.append(yara.compile(filepath=YARA_SIGNATURE_DIR + "/" + yara_file))
             except yara.SyntaxError as e:
                 log(2, "error compiling %s" % yara_file)
-
-    def find_function(self, addr):
-            return self.bv.get_function_at(self.bv.platform, addr)
 
     def find_current_basic_block(self, addr):
         steps = 0x40
