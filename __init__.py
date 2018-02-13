@@ -31,15 +31,17 @@ class YaraScan(object):
     size = 0
     data = [] 
     data_offsets = []
+    matches = []
 
     def __init__(self, bv):
+        super(YaraScan, self).__init__()
         self.bv = bv
         self.start = self.bv.start
         self.end = self.bv.end
         self.size = self.end - self.start
         self.load_binary()
         self.load_signatures()
-        log(1, "scanning binary %s" % bv.file.filename)
+        log.log(1, "scanning binary %s" % bv.file.filename)
         self.scan()
 
     """
@@ -72,38 +74,23 @@ class YaraScan(object):
         try:
             ininfo = os.stat(YARA_SIGNATURE_DIR)
             if not stat.S_ISDIR(ininfo.st_mode):
-                log(3, "%s is no directory" % YARA_SIGNATURE_DIR)
+                log.log(3, "%s is no directory" % YARA_SIGNATURE_DIR)
                 sys.exit(-1)
         except OSError as e:
             if "No such file or directory" in e:
                 # create new directory
-                log(2, "creating %s" % YARA_SIGNATURE_DIR)
+                log.log(2, "creating %s" % YARA_SIGNATURE_DIR)
                 os.mkdir(YARA_SIGNATURE_DIR)
             else:
-                log(3, "could not read %s" % YARA_SIGNATURE_DIR)
+                log.log(3, "could not read %s" % YARA_SIGNATURE_DIR)
                 sys.exit(-1)
         yara_files = [dir for dir in os.listdir(YARA_SIGNATURE_DIR) if ".yar" in dir[-4:]]
         for yara_file in yara_files:
-            log(1, "loading %s" % yara_file)
+            log.log(1, "loading %s" % yara_file)
             try:
                 self.rules.append(yara.compile(filepath=YARA_SIGNATURE_DIR + "/" + yara_file))
             except yara.SyntaxError as e:
-                log(2, "error compiling %s" % yara_file)
-
-    def find_current_basic_block(self, addr):
-        neg_off = 0x40
-        while True:
-            bb_previous_bb = self.bv.get_next_basic_block_start_after(addr - neg_off)
-            if bb_previous_bb < addr:
-                bb_candidate = self.bv.get_next_basic_block_start_after(bb_previous_bb)
-                if bb_candidate > addr:
-                    return bb_candidate
-                while True:
-                    possible_bb = self.bv.get_next_basic_block_start_after(bb_candidate)
-                    if possible_bb > addr:
-                        return bb_candidate
-                    bb_candidate = possible_bb
-            neg_off = neg_off * 2
+                log.log(2, "error compiling %s" % yara_file)
 
     def yr_callback(self, data):
         if not data['matches']:
@@ -117,11 +104,11 @@ class YaraScan(object):
                 last_off = off
             match_addr = self.start + string[0] + last_off
             matched_string = ''.join(["%02x " % ord(c) for c in string[2]])
-            log(1, "0x%x rule %s string %s" % (match_addr, data['rule'], matched_string))
+            log.log(1, "0x%x rule %s string %s" % (match_addr, data['rule'], matched_string))
+            self.matches.append({ "rule": data['rule'], "address": match_addr, "string": matched_string })
             if self.bv.is_offset_executable(match_addr):
-                # write comment
-                bb_addr = self.find_current_basic_block(match_addr)
-                bbs = self.bv.get_basic_blocks_at(bb_addr)
+                # comments are unfortunately only available in executable code
+                bbs = self.bv.get_basic_blocks_at(match_addr)
                 for bb in bbs:
                     if bb.end > match_addr:
                         f = bb.function
@@ -135,7 +122,31 @@ class YaraScan(object):
         for yr in self.rules:
             yr.match(data=scan_buffer, callback=self.yr_callback, timeout=30)
 
+    def display_matches(self, bv):
+        html = str()
+        plaintext = str()
+        html += "<!DOCTYPE html>\n"
+        html += "<html>\n\t<body>\n"
+        html += "<center>\n"
+        html += "<table>\n"
+        html += "<tr>\n"
+        html += "<th width=\"400\">rule</th>\n"
+        html += "<th width=\"400\">address</th>\n"
+        html += "<th width=\"400\">string</th>\n"
+        html += "</tr>\n"
+        for m in self.matches:
+            html += "<tr>\n"
+            html += "<td>%s</td>\n" % m["rule"]
+            html += "<td>0x%x</td>\n" % m["address"]
+            html += "<td>%s</td>\n" % m["string"]
+            html += "</tr>\n"
+        html += "</table>\n"
+        html += "</center>\n"
+        html += "\t</body>\n</html>"
+        bv.show_html_report("Yara matches", html, plaintext)
+
 def yara_scan(bv):
     ys = YaraScan(bv)
+    ys.display_matches(bv)
 
 PluginCommand.register("Yara Scan", "Scan the current binary with yara", yara_scan)
